@@ -15,7 +15,7 @@ services:
     volumes:
       - pg_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -129,10 +129,65 @@ services:
       dockerfile: Dockerfile
     container_name: ${COMPOSE_PROJECT_NAME}-backend
     <<: *default-restart
+    depends_on:
+      postgres:
+        condition: service_healthy
+      prisma-init:
+        condition: service_completed_successfully
     environment:
       PORT: ${BACKEND_PORT}
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      RABBITMQ_URL: ${RABBITMQ_URL}
+      S3_ENDPOINT: ${MINIO_S3_ENDPOINT}
+      S3_REGION: ${S3_REGION}
+      S3_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      S3_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      S3_FORCE_PATH_STYLE: "true"
+      S3_BUCKET_UPLOADS: ${S3_BUCKET_UPLOADS}
+      S3_BUCKET_VOD: ${S3_BUCKET_VOD}
+      MEILI_HOST: ${MEILI_HOST}
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY}
+      JWT_SECRET: ${JWT_SECRET}
     ports:
       - "${BACKEND_PORT}:3000"
+
+  # One-time Prisma schema push to create tables from schema.prisma
+  prisma-init:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: ${COMPOSE_PROJECT_NAME}-prisma-init
+    depends_on:
+      postgres:
+        condition: service_healthy
+    working_dir: /app
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      # OpenSSL engine env mirrors backend to ensure Prisma engines run
+      PRISMA_ENGINE_OPENSSL_VERSION: 3.0.x
+    entrypoint:
+      - /bin/sh
+      - -lc
+      - |
+        set -euo pipefail
+        echo "[prisma-init] Starting schema push..."
+        echo "[prisma-init] PWD=$(pwd)"
+        echo "[prisma-init] DATABASE_URL=$DATABASE_URL"
+        echo "[prisma-init] Listing /app and /app/prisma"
+        ls -la /app || true
+        ls -la /app/prisma || true
+        echo "[prisma-init] Prisma CLI version:"
+        npx prisma -v || ./node_modules/.bin/prisma -v || true
+        if [ ! -f /app/prisma/schema.prisma ]; then
+          echo "[prisma-init] ERROR: /app/prisma/schema.prisma not found" >&2
+          exit 1
+        fi
+        echo "[prisma-init] Running prisma db push..."
+        npx prisma db push --schema=/app/prisma/schema.prisma --accept-data-loss --skip-generate || \
+        ./node_modules/.bin/prisma db push --schema=/app/prisma/schema.prisma --accept-data-loss --skip-generate
+        echo "[prisma-init] Done: Prisma schema applied successfully."
+    restart: "no"
 
   nginx:
     image: nginx:1.25-alpine

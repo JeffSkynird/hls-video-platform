@@ -61,6 +61,13 @@ services:
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      # --- Notificaciones AMQP (slot 1) ---
+      MINIO_NOTIFY_AMQP_ENABLE_1: "on"
+      MINIO_NOTIFY_AMQP_URL_1: ${RABBITMQ_URL}
+      MINIO_NOTIFY_AMQP_EXCHANGE_1: ${AMQP_EXCHANGE}
+      MINIO_NOTIFY_AMQP_EXCHANGE_TYPE_1: "direct"
+      MINIO_NOTIFY_AMQP_ROUTING_KEY_1: ${AMQP_ROUTING_KEY}
+      MINIO_NOTIFY_AMQP_DURABLE_1: "on"
     command: ["server", "/data", "--console-address", ":9001"]
     ports:
       - "9000:9000"  # S3 API
@@ -104,7 +111,45 @@ services:
       - "7700:7700"
     volumes:
       - meili_data:/meili_data
+  
+  minio-amqp:
+    image: minio/mc:latest
+    container_name: ${COMPOSE_PROJECT_NAME}-minio-amqp
+    depends_on:
+      minio:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      MC_TTY: "0"
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      S3_BUCKET_UPLOADS: ${S3_BUCKET_UPLOADS}
+      MINIO_NOTIFY_AMQP_SLOT: ${MINIO_NOTIFY_AMQP_SLOT}
+      AMQP_URL: ${RABBITMQ_URL}
+      AMQP_EXCHANGE: ${AMQP_EXCHANGE}
+      AMQP_ROUTING_KEY: ${AMQP_ROUTING_KEY}
+      MINIO_EVENT_PREFIX: ${MINIO_EVENT_PREFIX}
+      MINIO_EVENT_SUFFIX: ${MINIO_EVENT_SUFFIX}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -euo pipefail
+        echo "Esperando MinIO..."
+        until (/usr/bin/mc alias set local http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null 2>&1); do sleep 2; done
 
+        echo "Agregando regla de eventos en bucket $S3_BUCKET_UPLOADS (AMQP slot $MINIO_NOTIFY_AMQP_SLOT ya definido por env en MinIO)"
+        /usr/bin/mc event add local/$S3_BUCKET_UPLOADS \
+          arn:minio:sqs::${MINIO_NOTIFY_AMQP_SLOT}:amqp \
+          --event put \
+          ${MINIO_EVENT_PREFIX:+--prefix "$MINIO_EVENT_PREFIX"} \
+          ${MINIO_EVENT_SUFFIX:+--suffix "$MINIO_EVENT_SUFFIX"} || true
+
+        echo "Reglas actuales:"
+        /usr/bin/mc event list local/$S3_BUCKET_UPLOADS || true
+        echo "Listo."
+    restart: "no"
   clickhouse:
     image: clickhouse/clickhouse-server:24.3
     container_name: ${COMPOSE_PROJECT_NAME}-clickhouse

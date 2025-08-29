@@ -1,0 +1,12 @@
+{
+"name": "backend-placeholder",
+"version": "0.1.0",
+"private": true,
+"license": "MIT",
+"scripts": {
+"start": "node index.js"
+},
+"dependencies": {
+"fastify": "^4.28.1"
+}
+}

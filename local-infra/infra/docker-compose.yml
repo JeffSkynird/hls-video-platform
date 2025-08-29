@@ -1,0 +1,157 @@
+x-restart: &default-restart
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ${COMPOSE_PROJECT_NAME}-postgres
+    <<: *default-restart
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: ${COMPOSE_PROJECT_NAME}-redis
+    <<: *default-restart
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "${REDIS_PORT}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: ${COMPOSE_PROJECT_NAME}-rabbitmq
+    <<: *default-restart
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_DEFAULT_VHOST}
+    ports:
+      - "5672:5672"   # AMQP
+      - "15672:15672" # Management UI
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    container_name: ${COMPOSE_PROJECT_NAME}-minio
+    <<: *default-restart
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    command: ["server", "/data", "--console-address", ":9001"]
+    ports:
+      - "9000:9000"  # S3 API
+      - "9001:9001"  # Console UI
+    volumes:
+      - minio_data:/data
+
+  # Init MinIO: create uploads and vod buckets
+  minio-mc:
+    image: minio/mc:latest
+    container_name: ${COMPOSE_PROJECT_NAME}-minio-mc
+    depends_on:
+      minio:
+        condition: service_started
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      S3_BUCKET_UPLOADS: ${S3_BUCKET_UPLOADS}
+      S3_BUCKET_VOD: ${S3_BUCKET_VOD}
+    entrypoint:
+      - /bin/bash
+      - -lc
+      - |
+        set -euo pipefail
+        echo "Waiting for MinIO..."
+        until mc alias set local http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null 2>&1; do
+          sleep 2
+        done
+        mc mb -p "local/${S3_BUCKET_UPLOADS}" || echo "Bucket ${S3_BUCKET_UPLOADS} already exists"
+        mc mb -p "local/${S3_BUCKET_VOD}"     || echo "Bucket ${S3_BUCKET_VOD} already exists"
+        echo "Current Buckets:"; mc ls local || true
+    restart: "no"
+
+  meilisearch:
+    image: getmeili/meilisearch:latest
+    container_name: ${COMPOSE_PROJECT_NAME}-meilisearch
+    <<: *default-restart
+    environment:
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY}
+    ports:
+      - "7700:7700"
+    volumes:
+      - meili_data:/meili_data
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.3
+    container_name: ${COMPOSE_PROJECT_NAME}-clickhouse
+    <<: *default-restart
+    environment:
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+    ports:
+      - "8123:8123" # HTTP interface
+      # - "9000:9000" # Native protocol (optional)
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: ${COMPOSE_PROJECT_NAME}-backend
+    <<: *default-restart
+    environment:
+      PORT: ${BACKEND_PORT}
+    ports:
+      - "${BACKEND_PORT}:3000"
+
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: ${COMPOSE_PROJECT_NAME}-nginx
+    <<: *default-restart
+    depends_on:
+      - backend
+      - minio
+    ports:
+      - "${NGINX_PORT}:80"
+    volumes:
+      - ../nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - hls_renditions:/var/www/hls:ro
+
+volumes:
+  pg_data:
+  redis_data:
+  rabbitmq_data:
+  minio_data:
+  meili_data:
+  clickhouse_data:
+  hls_renditions:

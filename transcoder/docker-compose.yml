@@ -1,0 +1,53 @@
+x-restart: &default-restart
+  restart: unless-stopped
+
+services:
+  transcoder:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ${COMPOSE_PROJECT_NAME}-transcoder
+    <<: *default-restart
+    environment:
+      # RabbitMQ 
+      AMQP_URL: ${AMQP_URL}           
+      AMQP_EXCHANGE: ${AMQP_EXCHANGE}     
+      AMQP_UPLOADS_RK: ${AMQP_UPLOADS_RK} 
+      AMQP_READY_RK: ${AMQP_READY_RK}     
+      AMQP_QUEUE: ${AMQP_QUEUE}           
+
+      # MinIO / S3
+      S3_ENDPOINT: ${S3_ENDPOINT}   
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_REGION: ${AWS_REGION}
+      S3_BUCKET_VOD: ${S3_BUCKET_VOD}
+
+      # HLS
+      HLS_PREFIX: ${HLS_PREFIX:-hls}
+      SEGMENT_SECONDS: ${SEGMENT_SECONDS:-6}
+
+      # Misc
+      RUST_LOG: ${RUST_LOG:-info}
+      METRICS_PORT: ${METRICS_PORT:-9102}
+      WORKDIR: ${WORKDIR:-/work}
+
+    volumes:
+      - transcoder-tmp:${WORKDIR:-/work}
+
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:${METRICS_PORT:-9102}/health"]
+      interval: 15s
+      timeout: 3s
+      retries: 10
+
+    networks:
+      - default
+
+volumes:
+  transcoder-tmp:
+
+networks:
+  default:
+    external: true
+    name: ${COMPOSE_PROJECT_NAME}_net

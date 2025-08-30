@@ -255,3 +255,7 @@ volumes:
   meili_data:
   clickhouse_data:
   hls_renditions:
+
+networks:
+  default:
+    name: ${COMPOSE_PROJECT_NAME}_net

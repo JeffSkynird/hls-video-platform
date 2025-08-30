@@ -1,0 +1,49 @@
+# Rust / Cargo
+/target/
+**/*.rs.bk
+
+# Keep Cargo.lock tracked for apps. If this is a library,
+# uncomment the next line to ignore it:
+# Cargo.lock
+
+# Wasm (if using wasm-pack)
+/pkg/
+*.wasm
+
+# Environment files
+.env
+.env.*
+!.env.example
+!.env.sample
+
+# Logs
+logs/
+*.log
+
+# Coverage / profiling
+coverage/
+lcov.info
+*.profraw
+*.profdata
+
+# Binaries / objects (extra safety; target/ already covers most)
+*.exe
+*.dll
+*.dylib
+*.so
+*.a
+*.o
+
+# Editor / OS noise
+.idea/
+.vscode/
+*.code-workspace
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Docker (optional local state)
+.docker/
+docker-data/

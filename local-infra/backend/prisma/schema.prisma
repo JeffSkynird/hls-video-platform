@@ -13,6 +13,11 @@ enum VideoStatus {
   ready
 }
 
+enum VideoVisibility {
+  public
+  private
+}
+
 model User {
   id        String   @id @default(uuid())
   email     String   @unique
@@ -29,6 +34,7 @@ model Video {
   title        String
   tags         String[]
   status       VideoStatus  @default(pending)
+  visibility   VideoVisibility @default(private)
   inputKey     String?
   outputPrefix String?
   thumbKey     String?
@@ -37,6 +43,9 @@ model Video {
   updatedAt    DateTime     @updatedAt
   comments     Comment[]
   likes        Like[]
+
+  @@index([status, visibility, createdAt])
+  @@index([ownerId, createdAt])
 }
 
 model Comment {

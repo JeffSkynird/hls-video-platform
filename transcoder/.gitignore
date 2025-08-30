@@ -1,5 +1,5 @@
 # Rust / Cargo
-/target/
+/target
 **/*.rs.bk
 
 # Keep Cargo.lock tracked for apps. If this is a library,

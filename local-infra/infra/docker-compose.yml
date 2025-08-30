@@ -194,6 +194,8 @@ services:
       MEILI_HOST: ${MEILI_HOST}
       MEILI_MASTER_KEY: ${MEILI_MASTER_KEY}
       JWT_SECRET: ${JWT_SECRET}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
+      RABBITMQ_EXCHANGE: ${AMQP_EXCHANGE}
     ports:
       - "${BACKEND_PORT}:3000"
 
@@ -246,6 +248,7 @@ services:
     volumes:
       - ../nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - hls_renditions:/var/www/hls:ro
+      - nginx_cache:/var/cache/nginx  
 
 volumes:
   pg_data:
@@ -255,6 +258,7 @@ volumes:
   meili_data:
   clickhouse_data:
   hls_renditions:
+  nginx_cache:
 
 networks:
   default:

@@ -8,6 +8,8 @@ import { S3Module } from './common/s3/s3.module';
 import { RedisModule } from './common/redis/redis.module';
 import { RabbitMQModule } from './common/rabbitmq/rabbitmq.module';
 import { MeiliModule } from './common/meili/meili.module';
+import { TranscodeConsumer } from './consumers/transcode.consumer';
+import { SearchModule } from './search/search.module';
 
 @Module({
   imports: [
@@ -20,6 +22,8 @@ import { MeiliModule } from './common/meili/meili.module';
     RedisModule,
     RabbitMQModule,
     MeiliModule,
+    SearchModule,
   ],
+  providers: [TranscodeConsumer],
 })
 export class AppModule {}

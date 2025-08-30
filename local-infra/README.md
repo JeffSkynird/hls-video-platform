@@ -22,10 +22,67 @@ docker compose up -d --build
 - Meili: `http://localhost:7700/health` → `{"status":"available"}`
 - ClickHouse: `curl http://localhost:8123/ping` → `Pong`
 
-## 4) (Optional) Test static HLS
+## 4) Probar HLS y flujo API
+
+### 4.a) Flujo completo por API: subir → transcodificar → publicar → listar
+
+1) Crear/ingresar usuario (obtiene token/sesión)
 ```
-# Copy any HLS tree to the hls_renditions volume path inside the nginx container
-# Example inside the container (to test paths):
-# docker exec -it vidstack-nginx sh -lc 'mkdir -p /var/www/hls/demo && echo "#EXTM3U" > /var/www/hls/demo/master.m3u8'
-# Then: http://localhost:8080/hls/demo/master.m3u8
+curl -X POST http://localhost:3000/v1/auth/login \
+  -H 'content-type: application/json' \
+  -d '{"email":"demo@example.com"}'
 ```
+
+2) Reservar video (crear metadatos)
+```
+curl -X POST http://localhost:3000/v1/videos \
+  -H 'content-type: application/json' \
+  -d '{"title":"Mi primer video","tags":["demo","test"]}'
+```
+
+3) Solicitar URL firmada para subir
+```
+curl -X POST http://localhost:3000/v1/uploads/signed-url \
+  -H 'content-type: application/json' \
+  -d '{"videoId":"<VIDEO_ID>","contentType":"video/mp4","fileSize":10485760}'
+```
+- Reemplaza `<VIDEO_ID>` por el `id` del video creado en el paso 2.
+- Guarda la respuesta JSON.
+
+4) Subir el archivo firmado a MinIO (bucket `uploads`)
+```
+cd local-infra/.signed-urls
+curl -X POST "http://localhost:9000/uploads" \
+  $(jq -r '.fields | to_entries[] | "-F \(.key)=\(.value)"' resp.json) \
+  -F "file=@sample.mp4"
+```
+- El archivo resp.json es donde esta el json generado en el paso previo.
+- el archivo sample.mp4 es el video a transcodificar.
+
+5) Publicar el video (hacerlo público)
+```
+curl -X POST http://localhost:3000/v1/videos/<VIDEO_ID>/publish \
+  -H 'content-type: application/json' \
+  -d '{"visibility":"public"}'
+```
+
+6) Listar videos públicos y listos (paginado)
+```
+curl 'http://localhost:3000/v1/videos?status=ready&visibility=public&page=1&pageSize=10'
+```
+- Una vez el video esté transcodificado, este endpoint incluye `hlsUrl` que apunta al `master.m3u8`.
+
+7) Buscar en el índice (MeiliSearch)
+```
+curl 'http://localhost:3000/v1/search?q=demo&page=1&pageSize=5'
+```
+
+8) Dar permisos de lectura al bucket VOD para acceder al `hlsUrl`
+```
+docker compose -f local-infra/infra/docker-compose.yml run --rm --entrypoint sh minio-mc -lc \
+  'mc alias set local http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null 2>&1 && \
+   mc anonymous set download local/vod && \
+   mc anonymous get local/vod'
+```
+- Esto habilita acceso anónimo de solo lectura al bucket `vod` donde se escriben las rendiciones HLS.
+- Se debe ejecutar en la raiz.
